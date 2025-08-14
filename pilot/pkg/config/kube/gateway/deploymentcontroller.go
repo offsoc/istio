@@ -55,6 +55,7 @@ import (
 	"istio.io/istio/pkg/kube/controllers"
 	"istio.io/istio/pkg/kube/inject"
 	"istio.io/istio/pkg/kube/kclient"
+	"istio.io/istio/pkg/kube/kubetypes"
 	istiolog "istio.io/istio/pkg/log"
 	"istio.io/istio/pkg/maps"
 	"istio.io/istio/pkg/ptr"
@@ -96,7 +97,7 @@ type DeploymentController struct {
 	patcher             patcher
 	gateways            kclient.Client[*gateway.Gateway]
 	gatewayClasses      kclient.Client[*gateway.GatewayClass]
-	listenerSets        kclient.Client[*gatewayx.XListenerSet]
+	listenerSets        kclient.Informer[*gatewayx.XListenerSet]
 	listenerSetByParent kclient.Index[types.NamespacedName, *gatewayx.XListenerSet]
 
 	clients         map[schema.GroupVersionResource]getter
@@ -269,7 +270,7 @@ func NewDeploymentController(
 		controllers.WithMaxAttempts(5))
 
 	if features.EnableAlphaGatewayAPI {
-		dc.listenerSets = kclient.NewFiltered[*gatewayx.XListenerSet](client, filter)
+		dc.listenerSets = kclient.NewDelayedInformer[*gatewayx.XListenerSet](client, gvr.XListenerSet, kubetypes.StandardInformer, filter)
 		dc.listenerSetByParent = kclient.CreateIndex(dc.listenerSets, "parent", func(o *gatewayx.XListenerSet) []types.NamespacedName {
 			return []types.NamespacedName{extractListenerSetParent(o)}
 		})
@@ -330,7 +331,35 @@ func NewDeploymentController(
 		}
 	}))
 
-	gateways.AddEventHandler(controllers.ObjectHandler(dc.queue.AddObject))
+	// we check if the generation has changed on a gateway, or if the annotations or labels have been updated
+	// reconciliation is expensive, so status updates for attachedRoutes can be skipped.
+
+	gateways.AddEventHandler(
+		controllers.FromEventHandler(func(o controllers.Event) {
+			switch o.Event {
+			case controllers.EventAdd:
+				dc.queue.AddObject(o.New)
+			case controllers.EventUpdate:
+				if o.New.GetGeneration() != o.Old.GetGeneration() {
+					dc.queue.AddObject(o.New)
+					break
+				}
+				if !maps.Equal(o.New.GetLabels(), o.Old.GetLabels()) {
+					dc.queue.AddObject(o.New)
+					break
+				}
+				if !maps.Equal(o.New.GetAnnotations(), o.Old.GetAnnotations()) {
+					dc.queue.AddObject(o.New)
+					break
+				}
+				log.Debugf("skip unchanged gateway %s", o.New.GetName())
+			case controllers.EventDelete:
+				dc.queue.AddObject(o.Old)
+			default:
+				log.Errorf("unhandled event for gateway object %v", o)
+			}
+		}))
+
 	gatewayClasses.AddEventHandler(controllers.ObjectHandler(func(o controllers.Object) {
 		for _, g := range dc.gateways.List(metav1.NamespaceAll, klabels.Everything()) {
 			if string(g.Spec.GatewayClassName) == o.GetName() {
@@ -474,6 +503,13 @@ func (d *DeploymentController) configureIstioGateway(log *istiolog.Scope, gw gat
 		}
 	}
 
+	var nativeSidecarModeEnabled bool
+	if features.EnableNativeSidecars == features.NativeSidecarModeDisabled {
+		nativeSidecarModeEnabled = false
+	} else {
+		nativeSidecarModeEnabled = true
+	}
+
 	input := TemplateInput{
 		Gateway:        &gw,
 		DeploymentName: model.GetOrDefault(gw.Annotations[annotation.GatewayNameOverride.Name], defaultName),
@@ -483,6 +519,7 @@ func (d *DeploymentController) configureIstioGateway(log *istiolog.Scope, gw gat
 
 		KubeVersion:               kube.GetVersionAsInt(d.client),
 		Revision:                  d.revision,
+		NativeSidecars:            nativeSidecarModeEnabled,
 		ServiceType:               serviceType,
 		ProxyUID:                  proxyUID,
 		ProxyGID:                  proxyGID,
@@ -915,6 +952,7 @@ type TemplateInput struct {
 	ClusterID                 string
 	KubeVersion               int
 	Revision                  string
+	NativeSidecars            bool
 	ProxyUID                  int64
 	ProxyGID                  int64
 	CompliancePolicy          string

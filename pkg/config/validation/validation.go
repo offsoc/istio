@@ -1051,7 +1051,8 @@ func validateTrafficPolicy(configNamespace string, policy *networking.TrafficPol
 		return Validation{}
 	}
 	if policy.OutlierDetection == nil && policy.ConnectionPool == nil &&
-		policy.LoadBalancer == nil && policy.Tls == nil && policy.PortLevelSettings == nil && policy.Tunnel == nil && policy.ProxyProtocol == nil {
+		policy.LoadBalancer == nil && policy.Tls == nil && policy.PortLevelSettings == nil && policy.Tunnel == nil && policy.ProxyProtocol == nil &&
+		policy.RetryBudget == nil {
 		return WrapError(fmt.Errorf("traffic policy must have at least one field"))
 	}
 
@@ -1595,13 +1596,14 @@ func validateJwtRule(rule *security_beta.JWTRule) (errs error) {
 	if rule == nil {
 		return nil
 	}
-	if len(rule.Issuer) == 0 {
-		errs = multierror.Append(errs, errors.New("issuer must be set"))
-	}
 	for _, audience := range rule.Audiences {
 		if len(audience) == 0 {
 			errs = multierror.Append(errs, errors.New("audience must be non-empty string"))
 		}
+	}
+
+	if len(rule.Issuer) == 0 && len(rule.JwksUri) == 0 {
+		errs = multierror.Append(errs, errors.New("issuer or jwksUri must be non-empty string"))
 	}
 
 	if len(rule.JwksUri) != 0 {

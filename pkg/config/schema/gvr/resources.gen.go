@@ -19,7 +19,7 @@ var (
 	DestinationRule                = schema.GroupVersionResource{Group: "networking.istio.io", Version: "v1", Resource: "destinationrules"}
 	DestinationRule_v1alpha3       = schema.GroupVersionResource{Group: "networking.istio.io", Version: "v1alpha3", Resource: "destinationrules"}
 	DestinationRule_v1beta1        = schema.GroupVersionResource{Group: "networking.istio.io", Version: "v1beta1", Resource: "destinationrules"}
-	EndpointSlice                  = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "endpointslices"}
+	EndpointSlice                  = schema.GroupVersionResource{Group: "discovery.k8s.io", Version: "v1", Resource: "endpointslices"}
 	Endpoints                      = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "endpoints"}
 	EnvoyFilter                    = schema.GroupVersionResource{Group: "networking.istio.io", Version: "v1alpha3", Resource: "envoyfilters"}
 	GRPCRoute                      = schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "grpcroutes"}
@@ -34,6 +34,7 @@ var (
 	HTTPRoute_v1alpha2             = schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1alpha2", Resource: "httproutes"}
 	HTTPRoute_v1                   = schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "httproutes"}
 	HorizontalPodAutoscaler        = schema.GroupVersionResource{Group: "autoscaling", Version: "v2", Resource: "horizontalpodautoscalers"}
+	InferencePool                  = schema.GroupVersionResource{Group: "inference.networking.x-k8s.io", Version: "v1alpha2", Resource: "inferencepools"}
 	Ingress                        = schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"}
 	IngressClass                   = schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "ingressclasses"}
 	KubernetesGateway              = schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1beta1", Resource: "gateways"}
@@ -143,6 +144,8 @@ func IsClusterScoped(g schema.GroupVersionResource) bool {
 	case HTTPRoute_v1:
 		return false
 	case HorizontalPodAutoscaler:
+		return false
+	case InferencePool:
 		return false
 	case Ingress:
 		return false
